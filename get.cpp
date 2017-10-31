@@ -61,7 +61,7 @@ ADIOS_READ_METHOD get_read_method(const char *method)
 }
 
 template<typename n_t>
-int read_array(int i, ADIOS_FILE *fp)
+int read_array(int dataset_id, int array_id, ADIOS_FILE *fp)
 {
     int rank = 0;
     MPI_Comm comm = MPI_COMM_WORLD;
@@ -69,25 +69,22 @@ int read_array(int i, ADIOS_FILE *fp)
 
     // read array
     std::ostringstream oss;
-    oss << "dataset_" << rank << "/array_" << i;
+    oss << "dataset_" << dataset_id << "/array_" << array_id;
 
     std::string elem_path = oss.str() + "/number_of_elements";
     int n_elem = 0;
     if (adiosInq(fp, elem_path, n_elem))
-        return -1;
+      return -1;
 
     n_t *data = static_cast<n_t*>(malloc(n_elem*sizeof(n_t)));
     std::string data_path = oss.str() + "/data";
 
     //adiosInqBlock(fp, data_path);
 
-    ADIOS_SELECTION *sel = adios_selection_writeblock(0);
-
-    adios_schedule_read(fp, sel, data_path.c_str(),
-        0, 1, data);
+    ADIOS_SELECTION *sel = adios_selection_writeblock(rank);
+    adios_schedule_read(fp, sel, data_path.c_str(), 0, 1, data);
 
     int ierr = adios_perform_reads(fp, 1);
-    cerr << "adios_perform_read return = " << ierr << endl;
 
     adios_selection_delete(sel);
 
@@ -95,7 +92,7 @@ int read_array(int i, ADIOS_FILE *fp)
         return -1;
 
     // print the array
-    cerr << "get " << n_elem << " " << adios_tt<n_t>::name() << endl;
+    cerr << "get "<< dataset_id << " "  << n_elem << " " << adios_tt<n_t>::name() << endl;
     cerr << +data[0];
     for (int i = 1; i < n_elem; ++i)
         cerr  << (i % 32 == 0 ? "\n" : ", ") << +data[i];
@@ -140,23 +137,28 @@ int main(int argc, char **argv)
     int ierr = 0;
     while (adios_errno == 0) //err_end_of_stream)
     {
-        // read array
+        int n_datasets = 0;
+        if (adiosInq(fp, "n_datasets", n_datasets))
+            return -1;
+
+        for (int i = 0; i < n_datasets; ++i)
+        {
+            int dataset_id = rank*n_datasets + i;
+            // read array
 #if defined(ADIOS_ISSUE_3)
-        read_array<char>(0, fp);
-        read_array<unsigned char>(1, fp);
+            read_array<char>(dataset_id, 0, fp);
+            read_array<unsigned char>(dataset_id, 1, fp);
 #endif
-        read_array<int>(2, fp);
-        read_array<unsigned int>(3, fp);
-        read_array<long>(4, fp);
-        read_array<unsigned long>(5, fp);
-        read_array<float>(6, fp);
-        read_array<double>(7, fp);
+            read_array<int>(dataset_id, 2, fp);
+            read_array<unsigned int>(dataset_id, 3, fp);
+            read_array<long>(dataset_id, 4, fp);
+            read_array<unsigned long>(dataset_id, 5, fp);
+            read_array<float>(dataset_id, 6, fp);
+            read_array<double>(dataset_id, 7, fp);
+        }
 
         adios_release_step(fp);
-
         ierr = adios_advance_step(fp, 0, method == ADIOS_READ_METHOD_DATASPACES ? -1.0f : 0.0f);
-        cerr << "adios_advance_step return = " << ierr << endl;
-        cerr << "adios_errno = " << adios_errno << endl;
     }
 
     adios_read_close(fp);

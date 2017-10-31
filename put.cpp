@@ -11,7 +11,7 @@ using std::cerr;
 using std::endl;
 
 template <typename n_t>
-unsigned long define_array(int i, unsigned int n_elem, uint64_t gh)
+unsigned long define_array(int mesh_id, int array_id, unsigned int n_elem, uint64_t gh)
 {
     int rank = 0;
     MPI_Comm comm = MPI_COMM_WORLD;
@@ -19,7 +19,7 @@ unsigned long define_array(int i, unsigned int n_elem, uint64_t gh)
 
     // define an array
     std::ostringstream oss;
-    oss << "dataset_" << rank << "/array_" << i;
+    oss << "dataset_" << mesh_id << "/array_" << array_id;
     std::string elem_path = oss.str() + "/number_of_elements";
     std::string data_path = oss.str() + "/data";
 
@@ -38,7 +38,7 @@ unsigned long define_array(int i, unsigned int n_elem, uint64_t gh)
 }
 
 template <typename n_t>
-void write_array(int i, unsigned int n_elem, uint64_t fh)
+void write_array(int mesh_id, int array_id, unsigned int n_elem, uint64_t fh)
 {
     int rank = 0;
     MPI_Comm comm = MPI_COMM_WORLD;
@@ -46,7 +46,7 @@ void write_array(int i, unsigned int n_elem, uint64_t fh)
 
     // write the array
     std::ostringstream oss;
-    oss << "dataset_" << rank << "/array_" << i;
+    oss << "dataset_" << mesh_id << "/array_" << array_id;
 
     std::string elem_path = oss.str() + "/number_of_elements";
     std::string data_path = oss.str() + "/data";
@@ -59,7 +59,7 @@ void write_array(int i, unsigned int n_elem, uint64_t fh)
     adios_write(fh, data_path.c_str(), data);
 
     // print the array
-    cerr << "put " << n_elem << " " << adios_tt<n_t>::name() << endl;
+    cerr << "put " << mesh_id << " " << n_elem << " " << adios_tt<n_t>::name() << endl;
     cerr << +data[0];
     for (int i = 1; i < n_elem; ++i)
         cerr  << (i % 32 == 0 ? "\n" : ", ") << +data[i];
@@ -75,16 +75,17 @@ int main(int argc, char **argv)
     MPI_Comm comm = MPI_COMM_WORLD;
     MPI_Comm_rank(comm, &rank);
 
-    if (argc < 5)
+    if (argc < 6)
     {
-        cerr << "ERROR: put [file] [method] [array len] [n steps]" << endl;
+        cerr << "ERROR: put [file] [method] [array len] [n datasets] [n steps]" << endl;
         return -1;
     }
 
     const char *file = argv[1];
     const char *method = argv[2];
     int n_elem = atoi(argv[3]);
-    int n_steps = atoi(argv[4]);
+    int n_datasets = atoi(argv[4]);
+    int n_steps = atoi(argv[5]);
 
     // initialize adios
     adios_init_noxml(comm);
@@ -99,16 +100,25 @@ int main(int argc, char **argv)
 
     // define
     uint64_t buff_size = 0;
+
+    buff_size += sizeof(int);
+    adios_define_var(gh, "n_datasets", "",
+      adios_integer, "", "", "");
+
+    for (int i = 0; i < n_datasets; ++i)
+    {
+        int dataset_id = n_datasets*rank + i;
 #if defined(ADIOS_ISSUE_3)
-    buff_size += define_array<char>(0, n_elem, gh);
-    buff_size += define_array<unsigned char>(1, n_elem, gh);
+        buff_size += define_array<char>(dataset_id, 0, n_elem, gh);
+        buff_size += define_array<unsigned char>(dataset_id, 1, n_elem, gh);
 #endif
-    buff_size += define_array<int>(2, n_elem, gh);
-    buff_size += define_array<unsigned int>(3, n_elem, gh);
-    buff_size += define_array<long>(4, n_elem, gh);
-    buff_size += define_array<unsigned long>(5, n_elem, gh);
-    buff_size += define_array<float>(6, n_elem, gh);
-    buff_size += define_array<double>(7, n_elem, gh);
+        buff_size += define_array<int>(dataset_id, 2, n_elem, gh);
+        buff_size += define_array<unsigned int>(dataset_id, 3, n_elem, gh);
+        buff_size += define_array<long>(dataset_id, 4, n_elem, gh);
+        buff_size += define_array<unsigned long>(dataset_id, 5, n_elem, gh);
+        buff_size += define_array<float>(dataset_id, 6, n_elem, gh);
+        buff_size += define_array<double>(dataset_id, 7, n_elem, gh);
+    }
 
     for (int s = 0; s < n_steps; ++s)
     {
@@ -119,16 +129,23 @@ int main(int argc, char **argv)
         adios_group_size(fh, buff_size, &buff_size);
 
         // write
+        adios_write(fh, "n_datasets", &n_datasets);
+
+        for (int i = 0; i < n_datasets; ++i)
+        {
+            int dataset_id = n_datasets*rank + i;
 #if defined(ADIOS_ISSUE_3)
-        write_array<char>(0, n_elem, fh);
-        write_array<unsigned char>(1, n_elem, fh);
+            write_array<char>(dataset_id, 0, n_elem, fh);
+            write_array<unsigned char>(dataset_id, 1, n_elem, fh);
 #endif
-        write_array<int>(2, n_elem, fh);
-        write_array<unsigned int>(3, n_elem, fh);
-        write_array<long>(4, n_elem, fh);
-        write_array<unsigned long>(5, n_elem, fh);
-        write_array<float>(6, n_elem, fh);
-        write_array<double>(7, n_elem, fh);
+            write_array<int>(dataset_id, 2, n_elem, fh);
+            write_array<unsigned int>(dataset_id, 3, n_elem, fh);
+            write_array<long>(dataset_id, 4, n_elem, fh);
+            write_array<unsigned long>(dataset_id, 5, n_elem, fh);
+            write_array<float>(dataset_id, 6, n_elem, fh);
+            write_array<double>(dataset_id, 7, n_elem, fh);
+
+        }
 
         // close the file
         adios_close(fh);
