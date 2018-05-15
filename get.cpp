@@ -57,6 +57,30 @@ int adiosInq(ADIOS_FILE *fp, const std::string &path, val_t &val)
   return 0;
 }
 
+int adiosInqBlock(ADIOS_FILE *fp, const std::string &path)
+{
+  ADIOS_VARINFO *vinfo = adios_inq_var(fp, path.c_str());
+  if (!vinfo)
+    {
+    cerr << "ADIOS stream is missing \"" << path << "\"" << endl;
+    return -1;
+    }
+  adios_inq_var_blockinfo(fp, vinfo);
+
+
+  cerr << path << " has nsteps = " << vinfo->nsteps << " nblocks = "  << vinfo->nblocks[0] << endl;
+
+  for (int i = 0; i < vinfo->nblocks[0]; ++i)
+    {
+    cerr << "start = " << vinfo->blockinfo[0].start[0]
+      << " count = " << vinfo->blockinfo[0].count[0]
+      << " process_id = " << vinfo->blockinfo[0].process_id
+      << " time_index = " <<  vinfo->blockinfo[0].time_index << endl;
+    }
+  adios_free_varinfo(vinfo);
+  return 0;
+}
+
 ADIOS_READ_METHOD get_read_method(const char *method)
 {
     if (strcmp(method, "BP") == 0)
